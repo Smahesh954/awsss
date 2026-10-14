@@ -1,0 +1,276 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>AI Meeting Notes Agent - Background Recorder</title>
+  <!-- Separate CSS Files -->
+  <link rel="stylesheet" href="css/base.css">
+  <link rel="stylesheet" href="css/components.css">
+</head>
+<body>
+
+  <!-- Top Navigation Bar -->
+  <header class="navbar">
+    <a href="index.html" class="brand">
+      <div class="brand-icon">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3Z"/>
+          <path d="M19 10v2a7 7 0 0 1-14 0v-2"/>
+          <line x1="12" y1="19" x2="12" y2="22"/>
+        </svg>
+      </div>
+      <div>
+        <span class="brand-title">AI Meeting Notes Agent</span>
+        <span class="brand-badge">AWS Background Service</span>
+      </div>
+    </a>
+
+    <nav>
+      <ul class="nav-links">
+        <li><a href="index.html" class="nav-link active">Live Recorder</a></li>
+        <li><a href="architecture.html" class="nav-link">AWS Architecture & CI/CD</a></li>
+        <li><a href="history.html" class="nav-link">Meeting Archive</a></li>
+      </ul>
+    </nav>
+
+    <div class="server-status-pill" id="backend-status">
+      <div class="status-dot" id="backend-dot"></div>
+      <span id="backend-text">Checking Java Server...</span>
+    </div>
+  </header>
+
+  <!-- Main Content Container -->
+  <main class="container">
+    <div class="page-header">
+      <div>
+        <h1 class="page-title">Project 8: AI Meeting Notes Agent</h1>
+        <p class="page-subtitle">Real-time background audio recorder, speaker diarization, RAG Q&A, and structured action item extraction.</p>
+      </div>
+      <div class="sample-selector">
+        <label for="sample-meeting-select" style="font-size: 0.85rem; color: var(--text-muted);">Session:</label>
+        <select id="sample-meeting-select" class="select-input">
+          <option value="arch-review">Sprint Architecture Review (Alice, Bob, Charlie)</option>
+          <option value="open-claw">Project 9: OpenClaw Autonomous Coding Sync</option>
+        </select>
+      </div>
+    </div>
+
+    <!-- 2-Column Dashboard Grid -->
+    <div class="dashboard-grid">
+
+      <!-- LEFT COLUMN: Recorder & Diarization Feed -->
+      <section>
+        <!-- Audio Ingestion & Visualizer Card -->
+        <div class="card">
+          <div class="card-header">
+            <h2 class="card-title">
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><polygon points="10 8 16 12 10 16 10 8"/></svg>
+              Audio Ingestion Pipeline (Amazon S3 / Transcribe)
+            </h2>
+            <span class="timestamp-pill" id="meeting-timer">00:00</span>
+          </div>
+
+          <div class="audio-recorder-panel">
+            <div class="recorder-controls">
+              <button class="btn btn-primary record-btn-pulse" id="record-toggle-btn">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><circle cx="12" cy="12" r="7"/></svg>
+                Start Background Recording
+              </button>
+              <button class="btn btn-secondary btn-sm" id="reset-stream-btn">Reset</button>
+              <span id="recorder-state-label" style="font-size: 0.825rem; color: var(--text-muted); margin-left: auto;">
+                Ready to stream audio
+              </span>
+            </div>
+
+            <!-- Waveform Visualizer -->
+            <div class="visualizer-container" id="visualizer">
+              <!-- Visualizer bars injected by app.js -->
+            </div>
+
+            <div class="recorder-stats">
+              <span>Streaming Format: <strong>Opus/WAV 16kHz</strong></span>
+              <span>Diarization: <strong>Amazon Transcribe (3 Speakers)</strong></span>
+              <span id="chunk-count">6 Turns Ingested</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- Real-time Diarized Transcript Card -->
+        <div class="card">
+          <div class="card-header">
+            <h2 class="card-title">
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
+              Live Speaker Diarization Stream
+            </h2>
+            <div style="display: flex; gap: 0.5rem;">
+              <span class="speaker-badge" style="color: var(--speaker-1); background: var(--speaker-1-bg);">Alice</span>
+              <span class="speaker-badge" style="color: var(--speaker-2); background: var(--speaker-2-bg);">Bob</span>
+              <span class="speaker-badge" style="color: var(--speaker-3); background: var(--speaker-3-bg);">Charlie</span>
+            </div>
+          </div>
+
+          <div class="transcript-stream" id="transcript-stream">
+            <!-- Diarized chunks injected dynamically -->
+          </div>
+        </div>
+
+        <!-- Action Items & Key Decisions Card -->
+        <div class="card">
+          <div class="card-header">
+            <h2 class="card-title">
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></svg>
+              Extracted Action Items & Key Decisions (Bedrock LLM)
+            </h2>
+            <span class="brand-badge">DynamoDB Synced</span>
+          </div>
+
+          <div class="action-item-list" style="margin-bottom: 1.25rem;">
+            <div class="action-item-card">
+              <input type="checkbox" class="action-checkbox" checked>
+              <div class="action-content">
+                <div class="action-title">Configure S3 -> EventBridge -> Lambda asynchronous notification rule</div>
+                <div class="action-meta">
+                  <span>Assignee: <strong>Alice (Cloud Architect)</strong></span>
+                  <span class="priority-badge priority-high">High Priority</span>
+                </div>
+              </div>
+            </div>
+
+            <div class="action-item-card">
+              <input type="checkbox" class="action-checkbox">
+              <div class="action-content">
+                <div class="action-title">Implement speaker diarization parser & preserve timestamp chunking for RAG</div>
+                <div class="action-meta">
+                  <span>Assignee: <strong>Bob (ML Engineer)</strong></span>
+                  <span class="priority-badge priority-high">High Priority</span>
+                </div>
+              </div>
+            </div>
+
+            <div class="action-item-card">
+              <input type="checkbox" class="action-checkbox">
+              <div class="action-content">
+                <div class="action-title">Setup Dead-Letter Queue (DLQ) alerts & CI/CD sample audio test fixtures</div>
+                <div class="action-meta">
+                  <span>Assignee: <strong>Charlie (DevOps Lead)</strong></span>
+                  <span class="priority-badge priority-medium">Medium Priority</span>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div style="font-size: 0.8rem; font-weight: 600; color: var(--text-muted); margin-bottom: 0.4rem;">
+            Structured JSON Output (Bedrock Model Schema):
+          </div>
+          <pre class="json-viewer" id="action-items-json">Extracting structured JSON...</pre>
+        </div>
+      </section>
+
+      <!-- RIGHT COLUMN: RAG Assistant & Async Architecture -->
+      <section>
+        <!-- RAG Q&A Assistant Card -->
+        <div class="card">
+          <div class="card-header">
+            <h2 class="card-title">
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+              RAG Assistant (Bedrock & OpenSearch)
+            </h2>
+            <span class="brand-badge">Vector Search</span>
+          </div>
+
+          <div class="rag-chat-container">
+            <div class="rag-messages" id="rag-messages">
+              <div class="rag-msg agent">
+                Hello! I am your AI Meeting Agent. I maintain indexed vector embeddings of your meeting transcripts in OpenSearch Serverless. Ask me anything about what was decided or who said what!
+              </div>
+            </div>
+
+            <div class="preset-queries">
+              <button class="preset-pill">How does the async event pipeline work?</button>
+              <button class="preset-pill">What did Bob say about speaker diarization?</button>
+              <button class="preset-pill">What are the CI/CD and DLQ requirements?</button>
+              <button class="preset-pill">Where are action items stored and emailed?</button>
+            </div>
+
+            <div class="rag-input-box">
+              <input type="text" id="rag-input" class="rag-input" placeholder="Ask about past meetings or decisions...">
+              <button class="btn btn-primary" id="rag-send-btn">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg>
+              </button>
+            </div>
+          </div>
+        </div>
+
+        <!-- AWS Architecture Flow Card -->
+        <div class="card">
+          <div class="card-header">
+            <h2 class="card-title">
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="12 2 2 7 12 12 22 7 12 2"/><polyline points="2 17 12 22 22 17"/><polyline points="2 12 12 17 22 12"/></svg>
+              Event-Driven Pipeline Overview
+            </h2>
+            <a href="architecture.html" class="btn btn-secondary btn-sm">Full Spec & CI/CD</a>
+          </div>
+
+          <p style="font-size: 0.85rem; color: var(--text-muted); margin-bottom: 0.75rem;">
+            Decoupled async architecture: S3 event notifications trigger EventBridge & Lambda without holding synchronous HTTP connections.
+          </p>
+
+          <div class="pipeline-flow">
+            <div class="pipeline-node" id="node-s3">
+              <div class="node-icon">📦</div>
+              <div class="node-name">Amazon S3</div>
+              <div class="node-desc">Raw Audio</div>
+            </div>
+            <div class="pipeline-connector">→</div>
+
+            <div class="pipeline-node" id="node-eventbridge">
+              <div class="node-icon">⚡</div>
+              <div class="node-name">EventBridge</div>
+              <div class="node-desc">Async Router</div>
+            </div>
+            <div class="pipeline-connector">→</div>
+
+            <div class="pipeline-node" id="node-transcribe">
+              <div class="node-icon">🎙️</div>
+              <div class="node-name">Transcribe</div>
+              <div class="node-desc">Diarization</div>
+            </div>
+            <div class="pipeline-connector">→</div>
+
+            <div class="pipeline-node" id="node-bedrock">
+              <div class="node-icon">🧠</div>
+              <div class="node-name">Bedrock</div>
+              <div class="node-desc">RAG & JSON</div>
+            </div>
+          </div>
+
+          <div style="display: flex; gap: 0.5rem; margin-top: 0.75rem;">
+            <button class="btn btn-secondary btn-sm" id="trigger-pipeline-btn">Simulate 8-Stage Pipeline</button>
+            <button class="btn btn-secondary btn-sm" id="trigger-dlq-btn">Test DLQ Failure</button>
+          </div>
+          <div id="pipeline-terminal" style="background:#080c14; border:1px solid var(--border-color); border-radius:var(--radius-md); padding:0.6rem; font-family:var(--font-mono); font-size:0.75rem; max-height:120px; overflow-y:auto; margin-top:0.75rem;">
+            Ready to simulate event pipeline.
+          </div>
+        </div>
+      </section>
+
+    </div>
+  </main>
+
+  <!-- Footer -->
+  <footer class="footer">
+    <div>AI Meeting Notes Agent (Background Recorder) &bull; Implements Project 8 Architecture</div>
+    <div class="footer-links">
+      <a href="index.html">Dashboard</a>
+      <a href="architecture.html">AWS Architecture</a>
+      <a href="history.html">Past Meetings</a>
+    </div>
+  </footer>
+
+  <!-- Separate JavaScript Files -->
+  <script src="js/app.js"></script>
+  <script src="js/rag.js"></script>
+  <script src="js/pipeline.js"></script>
+</body>
+</html>
