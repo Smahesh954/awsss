@@ -6,11 +6,26 @@ import com.sun.net.httpserver.HttpExchange;
 
 import java.io.*;
 import java.net.InetSocketAddress;
+import java.net.URI;
+import java.net.http.HttpClient;
+import java.net.http.HttpRequest;
+import java.net.http.HttpResponse;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
+import java.security.KeyFactory;
+import java.security.Signature;
+import java.security.interfaces.RSAPublicKey;
+import java.security.spec.RSAPublicKeySpec;
+import java.math.BigInteger;
+import java.time.Duration;
+import java.util.Base64;
+import java.util.Map;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.Executors;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 
 /**
  * MeetingNotesServer: Standalone Java HTTP Server for AI Meeting Notes Agent.
@@ -23,6 +38,7 @@ public class MeetingNotesServer {
     private static MeetingService meetingService;
     private static RAGEngine ragEngine;
     private static Path rootDir;
+    private static CognitoTokenVerifier tokenVerifier;
 
     public static void main(String[] args) throws IOException {
         int port = DEFAULT_PORT;
@@ -42,6 +58,11 @@ public class MeetingNotesServer {
 
         meetingService = new MeetingService();
         ragEngine = new RAGEngine();
+        String issuer = System.getenv("COGNITO_ISSUER");
+        String clientId = System.getenv("COGNITO_CLIENT_ID");
+        if (issuer != null && !issuer.isBlank() && clientId != null && !clientId.isBlank()) {
+            tokenVerifier = new CognitoTokenVerifier(issuer, clientId);
+        }
 
         HttpServer server;
         try {
@@ -86,7 +107,6 @@ public class MeetingNotesServer {
                 exchange.sendResponseHeaders(204, -1);
                 return;
             }
-
             String json = String.format(
                 "{\"status\":\"online\",\"service\":\"AI Meeting Notes Agent\",\"port\":%d,\"javaVersion\":\"%s\",\"vm\":\"%s\"}",
                 port, System.getProperty("java.version"), System.getProperty("java.vm.name")
@@ -106,6 +126,7 @@ public class MeetingNotesServer {
                 exchange.sendResponseHeaders(204, -1);
                 return;
             }
+            if (!requireAuthorized(exchange)) return;
 
             StringBuilder sb = new StringBuilder("[");
             var list = meetingService.getAllMeetings();
@@ -130,6 +151,7 @@ public class MeetingNotesServer {
                 exchange.sendResponseHeaders(204, -1);
                 return;
             }
+            if (!requireAuthorized(exchange)) return;
 
             if (!"POST".equalsIgnoreCase(exchange.getRequestMethod())) {
                 sendJson(exchange, 405, "{\"error\":\"Method not allowed\"}");
@@ -158,6 +180,7 @@ public class MeetingNotesServer {
                 exchange.sendResponseHeaders(204, -1);
                 return;
             }
+            if (!requireAuthorized(exchange)) return;
 
             String pipelineJson = """
             {
@@ -236,6 +259,134 @@ public class MeetingNotesServer {
         exchange.sendResponseHeaders(statusCode, bytes.length);
         try (OutputStream os = exchange.getResponseBody()) {
             os.write(bytes);
+        }
+    }
+
+    private static boolean requireAuthorized(HttpExchange exchange) throws IOException {
+        if (tokenVerifier == null) {
+            sendJson(exchange, 503, "{\"error\":\"Cognito API authentication is not configured. Set COGNITO_ISSUER and COGNITO_CLIENT_ID.\"}");
+            return false;
+        }
+        String authorization = exchange.getRequestHeaders().getFirst("Authorization");
+        if (authorization == null || !authorization.startsWith("Bearer ")) {
+            sendJson(exchange, 401, "{\"error\":\"A Cognito access token is required.\"}");
+            return false;
+        }
+        try {
+            if (tokenVerifier.isValid(authorization.substring("Bearer ".length()))) return true;
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            System.err.println("Cognito verification was interrupted: " + e.getMessage());
+            sendJson(exchange, 503, "{\"error\":\"Cognito verification is temporarily unavailable.\"}");
+            return false;
+        } catch (IOException e) {
+            System.err.println("Cognito verification service is unavailable: " + e.getMessage());
+            sendJson(exchange, 503, "{\"error\":\"Cognito verification is temporarily unavailable.\"}");
+            return false;
+        } catch (Exception e) {
+            System.err.println("Cognito token verification failed: " + e.getMessage());
+        }
+        sendJson(exchange, 401, "{\"error\":\"The Cognito access token is invalid or expired.\"}");
+        return false;
+    }
+
+    private static final class CognitoTokenVerifier {
+        private static final Base64.Decoder URL_DECODER = Base64.getUrlDecoder();
+        private final String issuer;
+        private final String clientId;
+        private final HttpClient httpClient = HttpClient.newBuilder()
+            .connectTimeout(Duration.ofSeconds(5))
+            .build();
+        private final Map<String, RSAPublicKey> keys = new ConcurrentHashMap<>();
+        private volatile long keysFetchedAt;
+
+        private CognitoTokenVerifier(String issuer, String clientId) {
+            this.issuer = issuer.replaceAll("/+$", "");
+            this.clientId = clientId;
+        }
+
+        private boolean isValid(String token) throws Exception {
+            String[] parts = token.split("\\.");
+            if (parts.length != 3) return false;
+
+            String header = new String(URL_DECODER.decode(parts[0]), StandardCharsets.UTF_8);
+            String claims = new String(URL_DECODER.decode(parts[1]), StandardCharsets.UTF_8);
+            String algorithm = jsonString(header, "alg");
+            String kid = jsonString(header, "kid");
+            if (!"RS256".equals(algorithm) || kid == null) return false;
+
+            long expiresAt = jsonLong(claims, "exp");
+            if (!issuer.equals(jsonString(claims, "iss")) ||
+                !clientId.equals(jsonString(claims, "client_id")) ||
+                !"access".equals(jsonString(claims, "token_use")) ||
+                expiresAt <= System.currentTimeMillis() / 1000) {
+                return false;
+            }
+
+            RSAPublicKey key = getKey(kid);
+            if (key == null) return false;
+            Signature verifier = Signature.getInstance("SHA256withRSA");
+            verifier.initVerify(key);
+            verifier.update((parts[0] + "." + parts[1]).getBytes(StandardCharsets.US_ASCII));
+            return verifier.verify(URL_DECODER.decode(parts[2]));
+        }
+
+        private RSAPublicKey getKey(String kid) throws Exception {
+            long cacheAge = System.currentTimeMillis() - keysFetchedAt;
+            if (keysFetchedAt == 0 || cacheAge > 3_600_000 ||
+                (!keys.containsKey(kid) && cacheAge > 60_000)) {
+                synchronized (keys) {
+                    cacheAge = System.currentTimeMillis() - keysFetchedAt;
+                    if (keysFetchedAt == 0 || cacheAge > 3_600_000 ||
+                        (!keys.containsKey(kid) && cacheAge > 60_000)) {
+                        HttpRequest request = HttpRequest.newBuilder()
+                            .uri(URI.create(issuer + "/.well-known/jwks.json"))
+                            .timeout(Duration.ofSeconds(5))
+                            .GET()
+                            .build();
+                        HttpResponse<String> response = httpClient.send(request, HttpResponse.BodyHandlers.ofString());
+                        if (response.statusCode() != 200) {
+                            throw new IOException("Cognito JWKS endpoint returned HTTP " + response.statusCode());
+                        }
+                        Map<String, RSAPublicKey> refreshed = new ConcurrentHashMap<>();
+                        Matcher objects = Pattern.compile("\\{[^{}]*}").matcher(response.body());
+                        while (objects.find()) {
+                            String jwk = objects.group();
+                            String keyId = jsonString(jwk, "kid");
+                            String modulus = jsonString(jwk, "n");
+                            String exponent = jsonString(jwk, "e");
+                            if (keyId != null && modulus != null && exponent != null &&
+                                "RSA".equals(jsonString(jwk, "kty")) &&
+                                "RS256".equals(jsonString(jwk, "alg")) &&
+                                "sig".equals(jsonString(jwk, "use"))) {
+                                BigInteger n = new BigInteger(1, URL_DECODER.decode(modulus));
+                                BigInteger e = new BigInteger(1, URL_DECODER.decode(exponent));
+                                RSAPublicKeySpec spec = new RSAPublicKeySpec(n, e);
+                                refreshed.put(keyId, (RSAPublicKey) KeyFactory.getInstance("RSA").generatePublic(spec));
+                            }
+                        }
+                        keys.clear();
+                        keys.putAll(refreshed);
+                        keysFetchedAt = System.currentTimeMillis();
+                    }
+                }
+            }
+            return keys.get(kid);
+        }
+
+        private static String jsonString(String json, String field) {
+            Matcher matcher = Pattern.compile("\"" + Pattern.quote(field) + "\"\\s*:\\s*\"([^\"]*)\"").matcher(json);
+            return matcher.find() ? matcher.group(1) : null;
+        }
+
+        private static long jsonLong(String json, String field) {
+            Matcher matcher = Pattern.compile("\"" + Pattern.quote(field) + "\"\\s*:\\s*(\\d+)").matcher(json);
+            if (!matcher.find()) return 0;
+            try {
+                return Long.parseLong(matcher.group(1));
+            } catch (NumberFormatException e) {
+                return 0;
+            }
         }
     }
 

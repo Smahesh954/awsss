@@ -1,0 +1,12 @@
+.venv/
+__pycache__/
+*.pyc
+.env
+.aws/
+recordings/
+meeting.wav
+transcript.txt
+meeting_notes.txt
+combined_transcript.txt
+combined_transcript_notes.txt
+*.model

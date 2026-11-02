@@ -46,21 +46,27 @@ async function handleRAGQuery() {
   try {
     let result = null;
 
-    // Try Java backend API first
+    // Use the client fallback only when the backend cannot be reached.
+    let response = null;
     try {
-      const resp = await fetch("/api/rag/query", {
+      response = await fetch("/api/rag/query", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: {
+          "Content-Type": "application/json",
+          "Authorization": `Bearer ${window.cognitoAuth.getAccessToken()}`
+        },
         body: JSON.stringify({ query: query })
       });
-      if (resp.ok) {
-        result = await resp.json();
-      }
-    } catch (e) {
-      // Backend not running; fallback to client RAG
+    } catch (error) {
+      // The backend is unavailable; use the local demo index.
     }
 
-    if (!result) {
+    if (response && !response.ok) {
+      throw new Error(`Meeting search failed (${response.status}).`);
+    }
+    if (response) {
+      result = await response.json();
+    } else {
       result = performClientRAG(query);
     }
 

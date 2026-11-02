@@ -57,8 +57,28 @@ ai-meeting-notes-agent/
 
 ## 🚀 How to Run
 
-### Method 1: Standalone Browser Mode (Zero Setup)
-Simply double-click or open `index.html` in any modern web browser (Edge, Chrome, Firefox). The client-side fallback engine handles audio visualization, speaker diarization, and RAG search directly in the browser!
+### Cognito sign-in setup
+The UI uses the Cognito Hosted UI authorization-code flow with PKCE. Create a Cognito user pool app client configured as a public client (no client secret), enable the authorization-code grant and the `openid`, `email`, and `profile` scopes, and register the exact HTTPS callback and sign-out URL.
+
+Set the public frontend values in `js/auth-config.js`:
+```js
+window.COGNITO_CONFIG = {
+  domain: "https://your-domain.auth.your-region.amazoncognito.com",
+  clientId: "your-public-app-client-id",
+  redirectUri: "https://your-host/index.html"
+};
+```
+Register that exact URL as the app client's allowed callback and sign-out URL. Sign-in returns to `index.html` regardless of which app page started it. Serve the app over HTTPS (localhost is supported for development); opening the HTML file directly is not supported.
+
+Before starting the Java server, set `COGNITO_ISSUER` to `https://cognito-idp.<region>.amazonaws.com/<user-pool-id>` and `COGNITO_CLIENT_ID` to the same app client ID. In PowerShell:
+```powershell
+$env:COGNITO_ISSUER = "https://cognito-idp.us-east-1.amazonaws.com/us-east-1_example"
+$env:COGNITO_CLIENT_ID = "your-public-app-client-id"
+```
+The Java API rejects requests without a valid, unexpired Cognito access token; API routes return `503` when server-side Cognito settings are missing. Keep the app client secret out of the browser and repository.
+
+### Method 1: Browser with Cognito
+After configuring Cognito and hosting the app over HTTPS (or localhost), open the registered callback URL in a modern browser. The client-side fallback engine handles audio visualization, speaker diarization, and RAG search directly in the browser after sign-in.
 
 ### Method 2: With Java Backend Server (Port 8080)
 1. Open PowerShell or Command Prompt in this folder:
